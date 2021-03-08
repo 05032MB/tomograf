@@ -2,6 +2,7 @@ import skimage.draw
 import numpy as np
 from abc import ABC, abstractmethod
 import matplotlib.pyplot as plt
+from . import filtering
 
 class AbstractTomograf(ABC):
     def __init__(self, receiver_count, angular_dist, scans_no=180):
@@ -82,8 +83,12 @@ class AbstractTomograf(ABC):
     def construct_sinogram(self):
         i = 0
         frames = []
+        fil = filtering.get_filter(10)
+
         while i < self.scans_no:
-            frames.append(self.construct_sinogram_frame())
+            row = self.construct_sinogram_frame()
+            row = np.convolve(row, fil, mode='same')
+            frames.append(row)
             self.tick()
             i+=1
             print("skan: {0}/{1}".format(i, self.scans_no), end = "\r")
