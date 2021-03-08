@@ -1,9 +1,10 @@
-import skimage.draw, skimage.io
+import skimage.draw
 import numpy as np
 from abc import ABC, abstractmethod
+import matplotlib.pyplot as plt
 
 class AbstractTomograf(ABC):
-    def __init__(self, receiver_count, angular_dist, scans_no = 180):
+    def __init__(self, receiver_count, angular_dist, scans_no=180):
         if receiver_count < 1:
             raise ValueError("Invalid number of beam receivers.")
         if angular_dist < 0:
@@ -29,40 +30,36 @@ class AbstractTomograf(ABC):
     def get_receivers(self, radius):
         return [self.get_receiver_pos(radius, x) for x in np.arange(0, self.receiver_count - 1) ]
 
-    #def receiver_iter(self, radius):
-    #    i = 0
-
-    #    while i < self.receiver_count:
-    #        yield self.get_receiver_pos(radius, i)
-    #        i+=1
-
     @abstractmethod
     def get_emitter_pos(self, radius, emitter_no):
         pass
 
-    #@abstractmethod
-    #def emitter_iter(self, radius):
-    #    pass
-
-    #def beams_iter(self, radius):
-    #    for em, rc in zip(self.emitter_iter(radius), self.receiver_iter(radius)):
-    #        yield skimage.draw.line_nd(em, rc)
+    @abstractmethod
+    def get_emitters(self, radius):
+        pass
 
     def get_beams(self, radius):
-        beams = []
-        for em, rc in zip(self.get_emitters(radius), self.get_receivers(radius)):
-            beams.append(skimage.draw.line_nd(em, rc))
-        return beams
+        return [skimage.draw.line_nd(em, rc) for em, rc in zip(self.get_emitters(radius), self.get_receivers(radius))]
 
-    def construct_sinogram_frame(self, data):
-        height, width = data.shape
+    def load_image(self, data):
+        self.data = data
+        self.cached_beams = []
+
+    def normalize_image(self, frame):
+        max = 1.0 if frame.max() <= 1 else 255
+        frame *= max/frame.max()
+        return frame
+
+    def construct_sinogram_frame(self):
+        height, width = self.data.shape
         radius = np.sqrt(height**2 + width**2)/2
         frame = []
         beams = self.get_beams(radius)
+        translated_beams = []
 
         for beam in beams:
             def translate(beam, move):
-                return [int(np.round(x + move / 2)) for x in beam]
+                return [int(x + move / 2) for x in beam]
 
             beams_x = translate(beam[1], height)
             beams_y = translate(beam[0], width)
@@ -76,23 +73,45 @@ class AbstractTomograf(ABC):
             ]
 
             #data[(beam_translated[:, 1], beam_translated[:, 0] )] = 1
-            #skimage.io.imshow(data)
-            #skimage.io.show()
+            #plt.imshow(frame, cmap='gray')
+            #plt.show()
 
-            frame.append(np.mean(data[ (beam_translated[:, 1], beam_translated[:, 0] ) ]))
+            translated_beams.append(beam_translated)
+            frame.append(np.sum(self.data[ (beam_translated[:, 1], beam_translated[:, 0] ) ]))
+
+        self.cached_beams.append(translated_beams)
 
         return frame
 
-    def construct_sinogram(self, data):
+    def construct_sinogram(self):
         i = 0
         frames = []
         while i < self.scans_no:
-            frames.append(self.construct_sinogram_frame(data))
+            frames.append(self.construct_sinogram_frame())
             self.tick()
             i+=1
             print("skan: {0}/{1}".format(i, self.scans_no), end = "\r")
+
+        self.sinogram = frames
         
+        frames = self.normalize_image(np.array(frames))
         return frames
+
+    def construct_image(self):
+        height, width = self.data.shape
+        frame = np.zeros((width, height))
+
+        if not self.cached_beams:
+            raise NotImplementedError("You need to construct sinogram from an image first.")
+
+        for scanset, beams in zip(self.sinogram, self.cached_beams):
+            for beam_val, beam_translated in zip(scanset, beams):
+                frame[(beam_translated[:, 1], beam_translated[:, 0] )] += beam_val
+            #plt.imshow(frame, cmap='gray')
+            #plt.show()
+
+        frame = self.normalize_image(frame)
+        return frame
 
     def __str__(self):
         return ','.join([str(x) for x in [self.receiver_count, self.angular_dist, self.step] ])
@@ -110,11 +129,3 @@ class OneEmitterTomograf(AbstractTomograf):
 
     def get_emitters(self, radius):
         return [self.get_emitter_pos(radius) for x in np.arange(0, self.receiver_count - 1) ]
-    
-    #def emitter_iter(self, radius):
-    #    em = self.get_emitter_pos(radius)
-    #    i = 0
-
-    #    while i < self.receiver_count:
-    #        yield em
-    #        i+=1
