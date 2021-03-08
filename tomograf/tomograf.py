@@ -21,25 +21,25 @@ class AbstractTomograf(ABC):
     def tick(self):
         self.rotation += self.step % 360;
 
-    def get_receiver_pos(self, radius, receiver_no):
+    def get_receiver_pos(self, radius, offx, offy, receiver_no):
         x = radius * np.cos(np.pi + np.deg2rad(self.rotation - self.angular_dist / 2 + receiver_no * self.angular_dist/(self.receiver_count - 1) )  )
         y = radius * np.sin(np.pi + np.deg2rad(self.rotation - self.angular_dist / 2 + receiver_no * self.angular_dist/(self.receiver_count - 1) )  )
 
-        return (x, y)
+        return (offx + x, offy + y)
 
-    def get_receivers(self, radius):
-        return [self.get_receiver_pos(radius, x) for x in np.arange(0, self.receiver_count - 1) ]
+    def get_receivers(self, radius, offx, offy):
+        return [self.get_receiver_pos(radius, offx, offy, x) for x in np.arange(0, self.receiver_count - 1) ]
 
     @abstractmethod
-    def get_emitter_pos(self, radius, emitter_no):
+    def get_emitter_pos(self, radius, offx, offy, emitter_no):
         pass
 
     @abstractmethod
-    def get_emitters(self, radius):
+    def get_emitters(self, radius, offx, offy):
         pass
 
-    def get_beams(self, radius):
-        return [skimage.draw.line_nd(em, rc) for em, rc in zip(self.get_emitters(radius), self.get_receivers(radius))]
+    def get_beams(self, radius, offx, offy):
+        return [skimage.draw.line_nd(em, rc) for em, rc in zip(self.get_emitters(radius, offx, offy), self.get_receivers(radius, offx, offy))]
 
     def load_image(self, data):
         self.data = data
@@ -54,30 +54,26 @@ class AbstractTomograf(ABC):
         height, width = self.data.shape
         radius = np.sqrt(height**2 + width**2)/2
         frame = []
-        beams = self.get_beams(radius)
+        beams = self.get_beams(radius, height / 2, width / 2)
         translated_beams = []
 
         for beam in beams:
-            def translate(beam, move):
-                return [int(x + move / 2) for x in beam]
-
-            beams_x = translate(beam[1], height)
-            beams_y = translate(beam[0], width)
-
-            beam_translated = np.array(np.column_stack([beams_x, beams_y]))
+            beams_xx = np.array(beam[0])
+            beams_yy = np.array(beam[1])
 
             # https://thispointer.com/delete-elements-from-a-numpy-array-by-value-or-conditions-in-python/
-            beam_translated = beam_translated[
-                (beam_translated[:, 0] >= 0 )   & (beam_translated[:, 1] >= 0) &
-                (beam_translated[:, 0] < width) & (beam_translated[:, 1] < height)
-            ]
+            mask = (beams_xx[:] >= 0 )   & (beams_yy[:] >= 0) & (
+                    beams_xx[:] < width) & (beams_yy[:] < height)
+
+            beams_xx = beams_xx[mask]
+            beams_yy = beams_yy[mask]
 
             #data[(beam_translated[:, 1], beam_translated[:, 0] )] = 1
             #plt.imshow(frame, cmap='gray')
             #plt.show()
 
-            translated_beams.append(beam_translated)
-            frame.append(np.sum(self.data[ (beam_translated[:, 1], beam_translated[:, 0] ) ]))
+            translated_beams.append([beams_yy, beams_xx])
+            frame.append(np.sum(self.data[ (beams_yy, beams_xx ) ]))
 
         self.cached_beams.append(translated_beams)
 
@@ -106,7 +102,7 @@ class AbstractTomograf(ABC):
 
         for scanset, beams in zip(self.sinogram, self.cached_beams):
             for beam_val, beam_translated in zip(scanset, beams):
-                frame[(beam_translated[:, 1], beam_translated[:, 0] )] += beam_val
+                frame[(beam_translated[0], beam_translated[1] )] += beam_val
             #plt.imshow(frame, cmap='gray')
             #plt.show()
 
@@ -122,10 +118,10 @@ class OneEmitterTomograf(AbstractTomograf):
         super(OneEmitterTomograf, self).__init__(*args, **kwargs)
         self.emitter_count = 1
 
-    def get_emitter_pos(self, radius):
+    def get_emitter_pos(self, radius, offx, offy):
         x = radius * np.cos(np.deg2rad(self.rotation))
         y = radius * np.sin(np.deg2rad(self.rotation))
-        return (x,y)
+        return (offx + x, offy + y)
 
-    def get_emitters(self, radius):
-        return [self.get_emitter_pos(radius) for x in np.arange(0, self.receiver_count - 1) ]
+    def get_emitters(self, radius, offx, offy):
+        return [self.get_emitter_pos(radius, offx, offy) for x in np.arange(0, self.receiver_count - 1) ]
