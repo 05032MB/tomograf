@@ -43,22 +43,18 @@ class AbstractTomograf(ABC):
         return [skimage.draw.line_nd(em, rc) for em, rc in zip(self.get_emitters(radius, offx, offy), self.get_receivers(radius, offx, offy))]
 
     def load_image(self, data):
-        self.data = data
+        self.data = self.normalize_image(data)
         self.cached_beams = []
 
     def normalize_image(self, frame):
-        fm = frame.max()
-        if fm == 0:
-            return frame
-        max = 1.0 if fm <= 1 else 255
-        frame *= max/fm
+        frame = (frame - frame.min())/(frame.max() - frame.min())
         return frame
 
     def construct_sinogram_frame(self):
         height, width = self.data.shape
         radius = np.sqrt(height**2 + width**2)/2
         frame = []
-        beams = self.get_beams(radius, height / 2, width / 2)
+        beams = self.get_beams(radius, width / 2, height / 2)
         translated_beams = []
 
         for beam in beams:
@@ -95,6 +91,7 @@ class AbstractTomograf(ABC):
             self.tick()
             i+=1
             print("skan: {0}/{1}".format(i, self.scans_no), end = "\r")
+        print()
 
         self.sinogram = frames
         
@@ -103,7 +100,7 @@ class AbstractTomograf(ABC):
 
     def construct_image(self):
         height, width = self.data.shape
-        frame = np.zeros((width, height))
+        frame = np.zeros((height, width))
 
         if not self.cached_beams:
             raise NotImplementedError("You need to construct sinogram from an image first.")
@@ -115,6 +112,8 @@ class AbstractTomograf(ABC):
             #plt.show()
 
         frame = self.normalize_image(frame)
+        MSE = np.mean(np.power(frame - self.data, 2))
+        print("MSE: {0}".format(MSE))
         return frame
 
     def __str__(self):
