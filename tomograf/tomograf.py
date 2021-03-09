@@ -47,8 +47,11 @@ class AbstractTomograf(ABC):
         self.cached_beams = []
 
     def normalize_image(self, frame):
-        max = 1.0 if frame.max() <= 1 else 255
-        frame *= max/frame.max()
+        fm = frame.max()
+        if fm == 0:
+            return frame
+        max = 1.0 if fm <= 1 else 255
+        frame *= max/fm
         return frame
 
     def construct_sinogram_frame(self):
@@ -69,8 +72,8 @@ class AbstractTomograf(ABC):
             beams_xx = beams_xx[mask]
             beams_yy = beams_yy[mask]
 
-            #data[(beam_translated[:, 1], beam_translated[:, 0] )] = 1
-            #plt.imshow(frame, cmap='gray')
+            #self.data[(beams_yy, beams_xx)] = 1
+            #plt.imshow(self.data, cmap='gray')
             #plt.show()
 
             translated_beams.append([beams_yy, beams_xx])
