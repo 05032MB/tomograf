@@ -19,8 +19,11 @@ class AbstractTomograf(ABC):
         self.step = 360 / scans_no
         self.rotation = 0
 
+    def setAngle(self, angle):
+        self.rotation = angle % 360
+
     def tick(self):
-        self.rotation += self.step % 360;
+        self.rotation += self.step % 360
 
     def get_receiver_pos(self, radius, offx, offy, receiver_no):
         x = radius * np.cos(np.pi + np.deg2rad(self.rotation - self.angular_dist / 2 + receiver_no * self.angular_dist/(self.receiver_count - 1) )  )
@@ -41,6 +44,15 @@ class AbstractTomograf(ABC):
 
     def get_beams(self, radius, offx, offy):
         return [skimage.draw.line_nd(em, rc) for em, rc in zip(self.get_emitters(radius, offx, offy), self.get_receivers(radius, offx, offy))]
+
+    # debug
+    def dbg_print_rc_em(self, radius, offx, offy):
+        em = np.array(self.get_emitters(radius, offx, offy))
+        rc = np.array(self.get_receivers(radius, offx, offy))
+        print(em, rc)
+
+        plt.plot(em[:, 0], em[:, 1], 'g.', rc[:, 0], rc[:, 1], 'b.')
+        plt.show()
 
     def load_image(self, data):
         self.data = self.normalize_image(data)
@@ -116,6 +128,7 @@ class AbstractTomograf(ABC):
         print("MSE: {0}".format(MSE))
         return frame
 
+    # debug
     def __str__(self):
         return ','.join([str(x) for x in [self.receiver_count, self.angular_dist, self.step] ])
 
@@ -132,3 +145,16 @@ class OneEmitterTomograf(AbstractTomograf):
 
     def get_emitters(self, radius, offx, offy):
         return [self.get_emitter_pos(radius, offx, offy) for x in np.arange(0, self.receiver_count - 1) ]
+
+class ManyEmitterTomograf(AbstractTomograf):
+    def __init__(self, *args, **kwargs):
+        super(ManyEmitterTomograf, self).__init__(*args, **kwargs)
+        self.emitter_count = self.receiver_count
+
+    def get_emitter_pos(self, radius, offx, offy, receiver_no):
+        x = -1 * radius * np.cos(np.pi + np.deg2rad(self.rotation - self.angular_dist / 2 + receiver_no * self.angular_dist/(self.receiver_count - 1) )  )
+        y = -1 * radius * np.sin(np.pi + np.deg2rad(self.rotation - self.angular_dist / 2 + receiver_no * self.angular_dist/(self.receiver_count - 1) )  )
+        return ((offx + x), (offy + y))
+
+    def get_emitters(self, radius, offx, offy):
+        return [self.get_emitter_pos(radius, offx, offy, x) for x in np.arange(0, self.emitter_count - 1) ][::-1]
