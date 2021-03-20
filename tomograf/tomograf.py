@@ -66,44 +66,59 @@ class AbstractTomograf(ABC):
         frame = (frame - frame.min()) / (frame.max() - frame.min())
         return frame
 
-    def construct_sinogram_frame(self):
+    def filter_beam(self, beam, width, height):
+        beams_xx = np.array(beam[0])
+        beams_yy = np.array(beam[1])
+
+        # https://thispointer.com/delete-elements-from-a-numpy-array-by-value-or-conditions-in-python/
+        mask = (beams_xx[:] >= 0) & (beams_yy[:] >= 0) & (
+                beams_xx[:] < width) & (beams_yy[:] < height)
+
+        beams_xx = beams_xx[mask]
+        beams_yy = beams_yy[mask]
+
+        return beams_xx, beams_yy
+
+    def construct_sinogram_frame(self, do_cache=False):
         height, width = self.data.shape
         radius = np.sqrt(height ** 2 + width ** 2) / 2
         frame = []
         beams = self.get_beams(radius, width / 2, height / 2)
         translated_beams = []
 
+        if not do_cache:
+            self.width = width
+            self.height = height
+            self.radius = radius
+
         for beam in beams:
-            beams_xx = np.array(beam[0])
-            beams_yy = np.array(beam[1])
-
-            # https://thispointer.com/delete-elements-from-a-numpy-array-by-value-or-conditions-in-python/
-            mask = (beams_xx[:] >= 0) & (beams_yy[:] >= 0) & (
-                    beams_xx[:] < width) & (beams_yy[:] < height)
-
-            beams_xx = beams_xx[mask]
-            beams_yy = beams_yy[mask]
+            (beams_xx, beams_yy) = self.filter_beam(beam, width, height)
 
             # self.data[(beams_yy, beams_xx)] = 1
             # plt.imshow(self.data, cmap='gray')
             # plt.show()
 
-            translated_beams.append([beams_yy, beams_xx])
+            if do_cache:
+                translated_beams.append([beams_yy, beams_xx])
+
             frame.append(np.sum(self.data[(beams_yy, beams_xx)]))
 
-        self.cached_beams.append(translated_beams)
+        if do_cache:
+            self.cached_beams.append(translated_beams)
 
         return frame
 
-
-    def construct_sinogram(self, enable):
+    def construct_sinogram(self, enable_filter=True, do_cache=False):
         i = 0
         frames = []
         fil = filtering.get_filter(10)
 
+        if not do_cache:
+            self.start_angle = self.rotation
+
         while i < self.scans_no:
-            row = self.construct_sinogram_frame()
-            if enable:
+            row = self.construct_sinogram_frame(do_cache)
+            if enable_filter:
                 row = np.convolve(row, fil, mode='same')
             frames.append(row)
             self.tick()
@@ -116,21 +131,43 @@ class AbstractTomograf(ABC):
         frames = self.normalize_image(np.array(frames))
         return frames
 
-    def construct_image(self):
+    def construct_image_frame(self, frame, scanset):
+        beams = self.get_beams(self.radius, self.width / 2, self.height / 2)
+
+        for (beam_val, beam) in zip(scanset, beams):
+            (beams_xx, beams_yy) = self.filter_beam(beam, self.width, self.height)
+            frame[(beams_yy, beams_xx)] += beam_val
+
+        return frame
+
+    def construct_image(self, do_gif=True, gif_step=10):
         height, width = self.data.shape
         frame = np.zeros((height, width))
         gif = []
+        i = 1
         if not self.cached_beams:
-            raise NotImplementedError("You need to construct sinogram from an image first.")
+            print("Rekonstrukcja...")
+            self.setAngle(self.start_angle)
 
-        for scanset, beams in zip(self.sinogram, self.cached_beams):
-            for beam_val, beam_translated in zip(scanset, beams):
-                frame[(beam_translated[0], beam_translated[1])] += beam_val
+            for scanset in self.sinogram:
+                frame = self.construct_image_frame(frame, scanset)
+                self.tick()
 
+                if do_gif:
+                    if (i % gif_step) == 0:
+                        gif.append(self.normalize_image(frame))
+                i+=1
 
-            # plt.imshow(frame, cmap='gray')
-            # plt.show()
-            gif.append(self.normalize_image(frame))
+        else:
+            for scanset, beams in zip(self.sinogram, self.cached_beams):
+                for beam_val, beam_translated in zip(scanset, beams):
+                    frame[(beam_translated[0], beam_translated[1])] += beam_val
+                    # plt.imshow(frame, cmap='gray')
+                    # plt.show()
+                if do_gif:
+                    if (i % gif_step) == 0:
+                        gif.append(self.normalize_image(frame))
+                i+=1
 
         frame = self.normalize_image(frame)
         MSE = np.mean(np.power(frame - self.data, 2))
