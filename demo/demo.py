@@ -30,7 +30,7 @@ def findJPG(comp):
 
 
 @st.cache
-def simulate(receiverCount, angularDist, scansNo, link, filteringA):
+def simulate(receiverCount, angularDist, scansNo, link, filteringA, gif_step):
 
     tomograf = ManyEmitterTomograf(receiverCount, angularDist, scansNo)
     imie_pacjenta = ""
@@ -48,7 +48,7 @@ def simulate(receiverCount, angularDist, scansNo, link, filteringA):
 
     tomograf.load_image(image)
     sinogram = tomograf.construct_sinogram(filteringA)
-    constructedImage, ms, gif = tomograf.construct_image()
+    constructedImage, ms, gif = tomograf.construct_image(gif_step=gif_step)
     return image, sinogram, constructedImage, ms, ds, gif
 
 st.title("Tomograf")
@@ -66,12 +66,12 @@ link = st.selectbox("Dej linka", findJPG(dir))
 
 image, sinogram, constructedImage, ms, dsOld, gifOld = simulate(receiver_count, angular_dist,
                                                                                    scans_no,
-                                                                                   link, filtering)
+                                                                                   link, filtering, gifStep)
 patientName = copy.deepcopy(dsOld.PatientName)
 patientID = copy.deepcopy(dsOld.PatientID)
 comms = copy.deepcopy(dsOld.ImageComments)
 gif = copy.deepcopy(gifOld)
-gif = gif[::gifStep]
+#gif = gif[::gifStep]
 
 patientName = st.text_input('Imie i nazwisko', value=patientName)
 patientID = st.text_input('Id', value=patientID)
