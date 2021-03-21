@@ -62,6 +62,9 @@ class AbstractTomograf(ABC):
         self.data = self.normalize_image(data)
         self.cached_beams = []
 
+        self.height, self.width = self.data.shape
+        self.radius = np.sqrt(self.height ** 2 + self.width ** 2) / 2
+
     def normalize_image(self, frame):
         frame = (frame - frame.min()) / (frame.max() - frame.min())
         return frame
@@ -80,23 +83,15 @@ class AbstractTomograf(ABC):
         return beams_xx, beams_yy
 
     def construct_sinogram_frame(self, do_cache=False):
-        height, width = self.data.shape
-        radius = np.sqrt(height ** 2 + width ** 2) / 2
+        if not hasattr(self, "data"):
+            raise ValueError("You need to load image for processing first, with load_image.")
+
         frame = []
-        beams = self.get_beams(radius, width / 2, height / 2)
+        beams = self.get_beams(self.radius, self.width / 2, self.height / 2)
         translated_beams = []
 
-        if not do_cache:
-            self.width = width
-            self.height = height
-            self.radius = radius
-
         for beam in beams:
-            (beams_xx, beams_yy) = self.filter_beam(beam, width, height)
-
-            # self.data[(beams_yy, beams_xx)] = 1
-            # plt.imshow(self.data, cmap='gray')
-            # plt.show()
+            (beams_xx, beams_yy) = self.filter_beam(beam, self.width, self.height)
 
             if do_cache:
                 translated_beams.append([beams_yy, beams_xx])
@@ -131,18 +126,18 @@ class AbstractTomograf(ABC):
         frames = self.normalize_image(np.array(frames))
         return frames
 
-    def construct_image_frame(self, frame, scanset):
+    def __construct_image_frame_no_cache(self, frame, scanset):
         beams = self.get_beams(self.radius, self.width / 2, self.height / 2)
 
         for (beam_val, beam) in zip(scanset, beams):
             (beams_xx, beams_yy) = self.filter_beam(beam, self.width, self.height)
             frame[(beams_yy, beams_xx)] += beam_val
 
-        return frame
-
     def construct_image(self, do_gif=True, gif_step=10):
-        height, width = self.data.shape
-        frame = np.zeros((height, width))
+        if not hasattr(self, "sinogram"):
+            raise ValueError("You need to process input image first, by calling construct_sinogram.")
+
+        frame = np.zeros((self.height, self.width))
         gif = []
         i = 1
         if not self.cached_beams:
@@ -150,7 +145,7 @@ class AbstractTomograf(ABC):
             self.setAngle(self.start_angle)
 
             for scanset in self.sinogram:
-                frame = self.construct_image_frame(frame, scanset)
+                self.__construct_image_frame_no_cache(frame, scanset)
                 self.tick()
 
                 if do_gif:
