@@ -33,29 +33,26 @@ def findJPG(comp):
 def simulate(receiverCount, angularDist, scansNo, link, filteringA, gif_step):
 
     tomograf = ManyEmitterTomograf(receiverCount, angularDist, scansNo)
-    imie_pacjenta = ""
-    id_pacjenta = ""
-    comms = ""
     if fnmatch(link, "*.jpg"):
         image = skimage.io.imread(link, as_gray=True)
+        tomograf.load_image(image)
+        sinogram = tomograf.construct_sinogram(filteringA)
+        constructedImage, ms, gif = tomograf.construct_image(gif_step=gif_step)
+        return image, sinogram, constructedImage, ms, "", gif
 
     else:
         ds = dcmread(link)
         image = ds.pixel_array
-        imie_pacjenta = ds.PatientName
-        id_pacjenta = ds.PatientID
-        comms = ds.ImageComments
-
-    tomograf.load_image(image)
-    sinogram = tomograf.construct_sinogram(filteringA)
-    constructedImage, ms, gif = tomograf.construct_image(gif_step=gif_step)
-    return image, sinogram, constructedImage, ms, ds, gif
+        tomograf.load_image(image)
+        sinogram = tomograf.construct_sinogram(filteringA)
+        constructedImage, ms, gif = tomograf.construct_image(gif_step=gif_step)
+        return image, sinogram, constructedImage, ms, ds, gif
 
 st.title("Tomograf")
 st.sidebar.title('Options')
-receiver_count = st.sidebar.number_input('Receiver Count', value=180, min_value=1, max_value=360)
-angular_dist = st.sidebar.number_input('Angular Distance', value=180, min_value=1, max_value=360)
-scans_no = st.sidebar.number_input('Scans number', value=380, min_value=1, max_value=500)
+receiver_count = st.sidebar.number_input('Receiver Count', value=180, min_value=1, max_value=720)
+angular_dist = st.sidebar.number_input('Angular Distance', value=180, min_value=1, max_value=720)
+scans_no = st.sidebar.number_input('Scans number', value=380, min_value=1, max_value=720)
 filtering = st.sidebar.checkbox('Use basic filter?', value=True)
 gifStep = st.sidebar.number_input('Step', value=10, min_value=1, max_value=500)
 
@@ -66,18 +63,23 @@ link = st.selectbox("Dej linka", findJPG(dir))
 
 image, sinogram, constructedImage, ms, dsOld, gifOld = simulate(receiver_count, angular_dist,
                                                                                    scans_no,
-                                                                                   link, filtering, gifStep)
-patientName = copy.deepcopy(dsOld.PatientName)
-patientID = copy.deepcopy(dsOld.PatientID)
-comms = copy.deepcopy(dsOld.ImageComments)
+                                                                                   link, filtering)
 gif = copy.deepcopy(gifOld)
-#gif = gif[::gifStep]
+
+if not isinstance(dsOld, str):
+    patientName = copy.deepcopy(dsOld.PatientName)
+    patientID = copy.deepcopy(dsOld.PatientID)
+    comms = copy.deepcopy(dsOld.ImageComments)
+else:
+    patientName = ""
+    patientID = ""
+    comms = ""
 
 patientName = st.text_input('Imie i nazwisko', value=patientName)
 patientID = st.text_input('Id', value=patientID)
 comms = st.text_input('Komentarz ', value=comms)
 
-col1, col2, col3,col4 = st.beta_columns(4)
+col1, col2, col3, col4 = st.beta_columns(4)
 with col1:
     st.header("Initial image")
     st.image(image, use_column_width=True)
@@ -116,12 +118,19 @@ if st.button("Save to file"):
     ds.ImageComments = comms
     ds.file_meta.TransferSyntaxUID = uid.ImplicitVRLittleEndian
     ds.PixelData = bytes(image)
-    ds.PixelRepresentation = dsOld.PixelRepresentation
-    ds.BitsAllocated = dsOld.BitsAllocated
-    ds.Rows = dsOld.Rows
-    ds.Columns = dsOld.Columns
-    ds.SamplesPerPixel = dsOld.SamplesPerPixel
-    ds.PhotometricInterpretation = dsOld.PhotometricInterpretation
+    ds.SamplesPerPixel = 1
+    ds.PhotometricInterpretation = 'MONOCHROME2'
+    ds.Rows = image.shape[0]
+    ds.Columns = image.shape[1]
+
+    ds.BitsAllocated = 16
+    ds.BitsStored = 16
+    ds.HighBit = 15
+    ds.PixelRepresentation = 1
+    ds.PixelPaddingValue = -2000
+    ds.RescaleIntercept = "-1024.0"
+    ds.RescaleSlope = "1.0"
+
     # Set the transfer syntax
     ds.is_little_endian = True
     ds.is_implicit_VR = True
