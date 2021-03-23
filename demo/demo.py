@@ -31,7 +31,6 @@ def findJPG(comp):
 
 @st.cache
 def simulate(receiverCount, angularDist, scansNo, link, filteringA, gif_step):
-
     tomograf = ManyEmitterTomograf(receiverCount, angularDist, scansNo)
     if fnmatch(link, "*.jpg"):
         image = skimage.io.imread(link, as_gray=True)
@@ -48,6 +47,7 @@ def simulate(receiverCount, angularDist, scansNo, link, filteringA, gif_step):
         constructedImage, ms, gif = tomograf.construct_image(gif_step=gif_step)
         return image, sinogram, constructedImage, ms, ds, gif
 
+
 st.title("Tomograf")
 st.sidebar.title('Options')
 receiver_count = st.sidebar.number_input('Receiver Count', value=180, min_value=1, max_value=720)
@@ -62,14 +62,15 @@ dir = [
 link = st.selectbox("Dej linka", findJPG(dir))
 
 image, sinogram, constructedImage, ms, dsOld, gifOld = simulate(receiver_count, angular_dist,
-                                                                                   scans_no,
-                                                                                   link, filtering)
+                                                                scans_no, link, filtering, gifStep)
+
+dsNew = copy.deepcopy(dsOld)
 gif = copy.deepcopy(gifOld)
 
-if not isinstance(dsOld, str):
-    patientName = copy.deepcopy(dsOld.PatientName)
-    patientID = copy.deepcopy(dsOld.PatientID)
-    comms = copy.deepcopy(dsOld.ImageComments)
+if not isinstance(dsNew, str):
+    patientName = copy.deepcopy(dsNew.PatientName)
+    patientID = copy.deepcopy(dsNew.PatientID)
+    comms = copy.deepcopy(dsNew.ImageComments)
 else:
     patientName = ""
     patientID = ""
@@ -100,55 +101,53 @@ filename = st.text_input('Nazwa pliku ')
 if st.button("Save to file"):
     file = open(filename + ".dcm", "wb")
 
-    #From scratch
-    # Populate required values for file meta information
+    # From scratch
+
+    ########################
     file_meta = FileMetaDataset()
-    file_meta.MediaStorageSOPClassUID = '1.2.840.10008.5.1.4.1.1.2'
-
-    file_meta.MediaStorageSOPInstanceUID = generate_uid()
-    file_meta.ImplementationClassUID = '1.2.826.0.1.3680043.8.498.'
-
-    file_meta.ImplementationVersionName = "PYDICOM 2.0.0"
     file_meta.FileMetaInformationGroupLength = 206
+    file_meta.FileMetaInformationVersion = b'\x00\x01'
+    file_meta.MediaStorageSOPClassUID = '1.2.840.10008.5.1.4.1.1.2'
+    file_meta.MediaStorageSOPInstanceUID = generate_uid()
+    file_meta.TransferSyntaxUID = '1.2.840.10008.1.2.1'
+    file_meta.ImplementationClassUID = '1.2.826.0.1.3680043.8.498.1'
+    file_meta.ImplementationVersionName = 'PYDICOM 2.0.0'
 
-    ds = FileDataset(file, {}, file_meta=file_meta, preamble=b"\0" * 128)
+    # Main data elements
+    ds = Dataset()
+    ds.ImageType = ['ORIGINAL', 'PRIMARY', 'AXIAL']
+    ds.SOPClassUID = '1.2.840.10008.5.1.4.1.1.2'
+    ds.SOPInstanceUID = '1.2.826.0.1.3680043.8.498.85187553111147486799609087725966020886'
+    ds.Modality = 'CT'
+    ds.StudyInstanceUID = '1.2.826.0.1.3680043.8.498.83372727452805475953983834969996366401'
+    ds.SeriesInstanceUID = '1.2.826.0.1.3680043.8.498.20930702201105245310253873616838208732'
+    ds.InstanceNumber = "1"
+    ds.FrameOfReferenceUID = '1.2.826.0.1.3680043.8.498.22208733695040770099055783779457592590'
+    ds.ImagesInAcquisition = "1"
+    ds.SamplesPerPixel = 1
+    ds.PhotometricInterpretation = 'MONOCHROME2'
+    ds.BitsAllocated = 8
+    ds.BitsStored = 8
+    ds.HighBit = 7
+    ds.PixelRepresentation = 0
 
     ds.PatientName = patientName
     ds.PatientID = patientID
     ds.ImageComments = comms
-    ds.file_meta.TransferSyntaxUID = uid.ImplicitVRLittleEndian
-    ds.PixelData = bytes(image)
-    ds.SamplesPerPixel = 1
-    ds.PhotometricInterpretation = 'MONOCHROME2'
+    ds.PixelData = image.tobytes()
+    print(ds.PixelData)
     ds.Rows = image.shape[0]
     ds.Columns = image.shape[1]
 
-    ds.BitsAllocated = 16
-    ds.BitsStored = 16
-    ds.HighBit = 15
-    ds.PixelRepresentation = 1
-    ds.PixelPaddingValue = -2000
-    ds.RescaleIntercept = "-1024.0"
-    ds.RescaleSlope = "1.0"
-
-    # Set the transfer syntax
-    ds.is_little_endian = True
-    ds.is_implicit_VR = True
-
-    #with template
-
-    #ds = copy.deepcopy(dsOld)
-    #ds.PatientName = patientName
-    #ds.PatientID = patientID
-    #ds.ImageComments = comms
-
-
-    # Set creation date/time
     dt = datetime.datetime.now()
     ds.ContentDate = dt.strftime('%Y%m%d')
     timeStr = dt.strftime('%H%M%S.%f')  # long format with micro seconds
     ds.ContentTime = timeStr
 
-    ds.save_as(file)
+    ds.file_meta = file_meta
+    ds.is_implicit_VR = False
+    ds.is_little_endian = True
+    ds.save_as(file, write_like_original=False)
+
     print("File saved.")
     file.close()
