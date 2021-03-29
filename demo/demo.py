@@ -8,7 +8,6 @@ import datetime
 from fnmatch import fnmatch
 from pydicom.uid import generate_uid
 
-
 sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir)))
 
@@ -32,7 +31,7 @@ def findJPG(comp):
 @st.cache
 def simulate(receiverCount, angularDist, scansNo, link, filteringA, gif_step):
     tomograf = ManyEmitterTomograf(receiverCount, angularDist, scansNo)
-    if fnmatch(link, "*.jpg"):
+    if fnmatch(link, "*.jpg") or fnmatch(link, "*.bmp"):
         image = skimage.io.imread(link, as_gray=True)
         tomograf.load_image(image)
         sinogram = tomograf.construct_sinogram(filteringA)
@@ -48,7 +47,7 @@ def simulate(receiverCount, angularDist, scansNo, link, filteringA, gif_step):
         return image, sinogram, constructedImage, ms, ds, gif
 
 
-def makeDicom(image, filename, patientName, patientID, comms):
+def makeDicom(image, filename, patientName, patientID, comms, data):
     file = open(filename + ".dcm", "wb")
 
     # From scratch
@@ -93,11 +92,8 @@ def makeDicom(image, filename, patientName, patientID, comms):
     ds.PatientName = patientName
     ds.PatientID = patientID
     ds.ImageComments = comms
+    ds.ContentDate = data
 
-    dt = datetime.datetime.now()
-    ds.ContentDate = dt.strftime('%Y%m%d')
-    timeStr = dt.strftime('%H%M%S.%f')  # long format with micro seconds
-    ds.ContentTime = timeStr
 
     ds.file_meta = file_meta
     ds.is_implicit_VR = False
@@ -139,8 +135,10 @@ else:
 patientName = st.text_input('Imie i nazwisko', value=patientName)
 patientID = st.text_input('Id', value=patientID)
 comms = st.text_input('Komentarz ', value=comms)
-
-st.write("min: {}, max: {}".format(np.min(image), np.max(image)))
+data = st.date_input(
+    "Data badaniaa?",
+    value=datetime.datetime(2020, 1, 1, 9, 30),
+    )
 col1, col2, col3, col4 = st.beta_columns(4)
 
 with col1:
@@ -161,4 +159,4 @@ st.write("MSE: {}".format(ms))
 filename = st.text_input('Nazwa pliku ')
 
 if st.button("Save to file"):
-    makeDicom(constructedImage, filename, patientName, patientID, comms)
+    makeDicom(constructedImage, filename, patientName, patientID, comms,data)
